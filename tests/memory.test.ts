@@ -1,3 +1,4 @@
+import { runtimePath } from './runtime-path.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp,readFile,readdir,rm,writeFile } from 'node:fs/promises';
@@ -11,7 +12,7 @@ import type { PluginConfig, RpcResult } from '../src/shared/protocol.ts';
 import type { MemoryDocument, MemoryVersion } from '../src/shared/memory.ts';
 import { decryptJson,unlockEnvelope,validateEnvelope } from '../src/host/memory-vault.ts';
 
-const jsonBackendPath=resolve('.local/runtime/node_modules/@deepseek-ai/dsh-storage-json/lib/index.js');
+const jsonBackendPath=runtimePath('node_modules/@deepseek-ai/dsh-storage-json/lib/index.js');
 const {JsonStorageBackend}=await import(pathToFileURL(jsonBackendPath).href) as {JsonStorageBackend:new(root:string)=>{kv:unknown;close():Promise<void>}};
 const config:PluginConfig={timeZone:'Asia/Shanghai',animationMs:0,interpretationTimeoutMs:2000,maxOutputTokens:3000,pollIntervalMs:100};
 const route={provider:'synthetic',model:'fixture'},password='synthetic-only-passphrase';

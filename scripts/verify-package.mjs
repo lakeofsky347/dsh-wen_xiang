@@ -6,6 +6,7 @@ import { readFile, readdir, lstat, mkdir, writeFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolveSemver, versionSatisfies } from './environment.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const localManifest=JSON.parse(await readFile(path.join(root,'package.json'),'utf8'));
@@ -45,8 +46,15 @@ while(offset+512<=tar.length){
 assert.ok(terminated,'Tar has a complete terminator');
 const names=[...archiveFiles.keys()];
 const manifest=JSON.parse(archiveFiles.get('package/package.json')?.toString('utf8')??'null');
-assert.equal(manifest?.name,'dsh-meihua');assert.match(manifest.version,/^0\.(?:4|6|7)\.\d+$/,'Verifier explicitly supports 0.4, 0.6 and 0.7 release layouts');
-const expanded=/^0\.(?:6|7)\./.test(manifest.version);
+assert.equal(manifest?.name,'dsh-meihua');assert.match(manifest.version,/^0\.(?:4|6|7|8)\.\d+$/,'Verifier explicitly supports 0.4, 0.6, 0.7 and 0.8 release layouts');
+const expanded=/^0\.(?:6|7|8)\./.test(manifest.version);
+if (/^0\.8\./.test(manifest.version)) {
+  const semver=resolveSemver({root});
+  assert.equal(manifest.engines?.dsh,localManifest.engines?.dsh,'Packaged DSH support range matches the reviewed manifest');
+  assert.deepEqual(manifest.peerDependencies,localManifest.peerDependencies,'Packaged host peer ranges match the reviewed manifest');
+  for(const version of ['0.2.0-rc.2','0.2.1-alpha.5','0.2.1-rc.1','0.2.1'])assert.ok(versionSatisfies(version,manifest.engines.dsh,semver),`Declared DSH range supports ${version}`);
+  for(const version of ['0.2.0-rc.1','0.3.0-alpha.1','0.3.0','1.0.0'])assert.ok(!versionSatisfies(version,manifest.engines.dsh,semver),`Declared DSH range excludes ${version}`);
+}
 const originalFixed=[
   'LICENSE','README.md','cordis.patch.yml','package.json',
   'lib/client.js','lib/core.js','lib/index.js','lib/styles.css','lib/tarot-assets-sources.json','lib/tarot-assets.md','lib/tarot.js',

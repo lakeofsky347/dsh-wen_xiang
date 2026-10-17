@@ -1,4 +1,4 @@
-/** Narrow audited DSH 0.2.0-rc.2 service faces; no client context is bundled into Host code. */
+/** Narrow DSH 0.2.0-rc.2 / 0.2.1-rc.1 service faces; Host code does not bundle a client context. */
 import type { JsonValue } from '../core/types.ts';
 
 export interface DurableMessage {
@@ -27,7 +27,10 @@ export interface ModelInfo {
   outputTokenAccounting?:'includes-reasoning'|'excludes-reasoning';
   reasoning?:{efforts:readonly {id:string;name:string}[];defaultEffort?:string;maxEffort?:string};
 }
-export interface CallConfig {provider:string;model:string;maxTokens?:number;reasoningEffort?:string}
+export interface CallControls {maxTokens?:number;reasoningEffort?:string;temperature?:number;stop?:string[]}
+export interface CallConfig extends CallControls {provider:string;model:string}
+/** New hosts invoke this once with immutable metadata from the adapter selected for dispatch. */
+export type ConfigureCall=(controls:Readonly<CallControls>,model:Readonly<ModelInfo>)=>CallControls;
 export interface PreparedCall {
   config:CallConfig;
   context?:{contextWindow:number};
@@ -41,7 +44,8 @@ export interface HostLlm {
   listModels(provider:string): Promise<{ id:string; name:string }[]>;
   stream(options:GenerateOptions): AsyncIterable<LlmChunk>;
   resolveModelInfo?(provider:string,model:string,signal?:AbortSignal):Promise<ModelInfo>;
-  prepareCall?(config:CallConfig,signal?:AbortSignal):Promise<PreparedCall>;
+  /** DSH 0.2.0-rc.2 ignores the third argument; 0.2.1-rc.1 invokes it before defaults. */
+  prepareCall?(config:CallConfig,signal?:AbortSignal,configure?:ConfigureCall):Promise<PreparedCall>;
 }
 export interface LogEvent { type:string; seq:number; time:number; data:unknown; surfaceOp?:'append'; ignorable?:true }
 export interface LogSession {

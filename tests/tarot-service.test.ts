@@ -1,3 +1,4 @@
+import { runtimePath } from './runtime-path.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -22,7 +23,7 @@ async function* untilCancelled(options:GenerateOptions):AsyncGenerator<LlmChunk>
   await new Promise<void>(resolve=>{if(options.signal.aborted)resolve();else options.signal.addEventListener('abort',()=>resolve(),{once:true});});
   options.signal.throwIfAborted();
 }
-function setup(generate:(options:GenerateOptions)=>AsyncIterable<LlmChunk>=complete,persistence?:HostContext['sessionPersistence']){
+function setup(generate:(options:GenerateOptions)=>AsyncIterable<LlmChunk>=complete,persistence?:HostContext['sessionPersistence'],settings:PluginConfig=config){
   const calls:GenerateOptions[]=[],events:LogEvent[]=[];
   let flushed=false,closed=0;
   const ctx:HostContext={
@@ -32,15 +33,16 @@ function setup(generate:(options:GenerateOptions)=>AsyncIterable<LlmChunk>=compl
     connection:{fetch:{register:()=>async()=>{}}},reflect:{provide:()=>async()=>{}},effect:factory=>factory(),
   };
   const gate=new GenerationGate();
-  return {ctx,gate,service:new TarotService(ctx,config,gate),calls,events,getClosed:()=>closed,setFlushed:()=>{flushed=true;}};
+  return {ctx,gate,service:new TarotService(ctx,settings,gate),calls,events,getClosed:()=>closed,setFlushed:()=>{flushed=true;}};
 }
 function ready(service:TarotService,spreadId:TarotSpreadId='timeline'):TarotReading{
   const reading=service.start({...startInput,spreadId});
   for(let slot=0;slot<reading.spread.cardCount;slot++)service.select(reading.id,slot);
   return service.reveal(reading.id,undefined,true);
 }
-async function settled(service:TarotService):Promise<TarotReading>{
-  for(let index=0;index<200;index++){
+async function settled(service:TarotService,timeoutMs=1000):Promise<TarotReading>{
+  const deadline=Date.now()+timeoutMs;
+  while(Date.now()<deadline){
     const reading=service.snapshot()!;if(reading.status!=='streaming')return reading;
     await new Promise(resolve=>setTimeout(resolve,5));
   }
@@ -182,12 +184,14 @@ test('正式DSH JSONL后端可读回塔罗终态元信息，排除固定牌阵�
   const cordisPackage:string='@deepseek-ai/cordis';
   type Fiber={await():Promise<void>;dispose():Promise<void>};
   const {Context}=await import(cordisPackage) as {Context:new()=>{plugin(plugin:unknown,config:object):Fiber;get(name:string):unknown}};
-  const module=await import(pathToFileURL(resolve('.local/runtime/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js')).href) as {default:unknown};
-  const root=await mkdtemp(join(tmpdir(),'tarot-log-')),ctx=new Context(),fiber=ctx.plugin(module.default,{root,compression:'none'});await fiber.await();
+  const module=await import(pathToFileURL(runtimePath('node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js')).href) as {default?:unknown;apply?:unknown};
+  assert.ok(typeof module.default==='function'||typeof module.apply==='function','released JSONL package must expose a Cordis plugin');
+  const root=await mkdtemp(join(tmpdir(),'tarot-log-')),ctx=new Context(),fiber=ctx.plugin(module.default??module,{root,compression:'none'});await fiber.await();
   const persistence=ctx.get('sessionPersistence') as HostContext['sessionPersistence']&{open(id:string,mode:'read'):Promise<PersistenceHandle&{read():Promise<{events:LogEvent[]}>}>;locate(meta:LogSession['header']):{path:string}};
-  const s=setup(complete,persistence);s.setFlushed();
+  // Released storage performs real filesystem work; the 200ms unit fixture limit is unrelated.
+  const s=setup(complete,persistence,{...config,interpretationTimeoutMs:5000});s.setFlushed();
   try{
-    const reading=ready(s.service);await s.service.interpret(reading.id,route);const final=await settled(s.service);assert.equal(final.status,'complete');
+    const reading=ready(s.service);await s.service.interpret(reading.id,route);const final=await settled(s.service,5000);assert.equal(final.status,'complete');
     const handle=await persistence.open(final.logSessionId!,'read'),{events}=await handle.read();await handle.close();
     assert.ok(events.some(event=>event.type==='private/result'));assert.equal(events.at(-1)!.type,'turn/end');
     const body=await readFile(persistence.locate({id:final.logSessionId!,version:4,createdAt:0}).path,'utf8');

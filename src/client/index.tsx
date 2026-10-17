@@ -1,4 +1,3 @@
-import type { ClientRpc } from '../shared/protocol.ts';
 import { readingIsBusy } from '../shared/protocol.ts';
 import { MeihuaController } from './controller.ts';
 import { Hub } from './Hub.tsx';
@@ -11,9 +10,10 @@ import css from './styles.css?inline';
 import {MethodController} from './method-controller.ts';
 import type {NewMethodId} from '../shared/modules.ts';
 import type {MethodActions} from './MethodPage.tsx';
+import {ClientConnectionScope,type ClientConnection} from './host-compat.ts';
 
 interface ClientContext {
-  connection:{ rpc:ClientRpc };
+  connection:ClientConnection;
   slots:{ inject(name:string,setup:()=>unknown):unknown; register(options:object,component:unknown):unknown };
   locale:{ register(namespace:string,dictionaries:object):()=>void; bind(namespace:string):Translate };
   effect(setup:()=>void | (()=>void), label?:string):unknown;
@@ -24,10 +24,12 @@ export const inject = ['slots','locale','connection','theme'];
 
 /** Register one sidebar row and one main panel; no replacement of the host shell. */
 export function apply(ctx:ClientContext):void {
-  const controller = new MeihuaController(ctx.connection.rpc,()=>memory.getSnapshot().status?.epoch);
-  const tarot = new TarotController(ctx.connection.rpc,()=>memory.getSnapshot().status?.epoch);
-  const methods:Record<NewMethodId,MethodController>={xiaoliu:new MethodController('xiaoliu',ctx.connection.rpc,()=>memory.getSnapshot().status?.epoch),lenormand:new MethodController('lenormand',ctx.connection.rpc,()=>memory.getSnapshot().status?.epoch),liuyao:new MethodController('liuyao',ctx.connection.rpc,()=>memory.getSnapshot().status?.epoch)};
-  const memory = new MemoryController(ctx.connection.rpc,()=>{controller.resetPrivate();tarot.resetPrivate();for(const method of Object.values(methods)){method.resetPrivate();void method.load();}void controller.load();void tarot.load();});
+  const rpc=new ClientConnectionScope(ctx.connection);
+  ctx.effect(()=>()=>rpc.dispose(),'divination: connection lifetime');
+  const controller = new MeihuaController(rpc,()=>memory.getSnapshot().status?.epoch);
+  const tarot = new TarotController(rpc,()=>memory.getSnapshot().status?.epoch);
+  const methods:Record<NewMethodId,MethodController>={xiaoliu:new MethodController('xiaoliu',rpc,()=>memory.getSnapshot().status?.epoch),lenormand:new MethodController('lenormand',rpc,()=>memory.getSnapshot().status?.epoch),liuyao:new MethodController('liuyao',rpc,()=>memory.getSnapshot().status?.epoch)};
+  const memory = new MemoryController(rpc,()=>{controller.resetPrivate();tarot.resetPrivate();for(const method of Object.values(methods)){method.resetPrivate();void method.load();}void controller.load();void tarot.load();});
   const hub = new HubController(()=>{const m=controller.getSnapshot(),r=tarot.getSnapshot();return m.casting||!!m.interpreting||r.acting||readingIsBusy(m.reading)||readingIsBusy(r.reading)||Object.values(methods).some(method=>method.getSnapshot().acting||readingIsBusy(method.getSnapshot().reading));});
   const restoreActiveReading=()=>{if(readingIsBusy(controller.getSnapshot().reading))hub.restoreReading('meihua');else if(readingIsBusy(tarot.getSnapshot().reading))hub.restoreReading('tarot');else for(const [id,method] of Object.entries(methods))if(readingIsBusy(method.getSnapshot().reading)){hub.restoreReading(id as NewMethodId);break;}};
   ctx.effect(()=>{const disposers=[controller.subscribe(restoreActiveReading),tarot.subscribe(restoreActiveReading),...Object.values(methods).map(method=>method.subscribe(restoreActiveReading))];return ()=>{for(const dispose of disposers)dispose();};},'divination: restore active reading');
@@ -68,6 +70,11 @@ export function apply(ctx:ClientContext):void {
     onTarotSkip:tarot.skipShuffle,onTarotDraft:tarot.updateDraft,onTarotActive:tarot.setActive
   })},Hub));
   ctx.slots.inject('sidebar.panellist',()=>ctx.slots.register({name:'sidebar.panellist',id:'meihua',order:30,label:()=>t('hubPanel'),locale:'meihua'},CosmosMark));
-  ctx.effect(()=>ctx.on('connection/reset',()=>{void controller.load();void tarot.load();for(const method of Object.values(methods))void method.load();void memory.load();}),'divination: connection subscription');
-  void controller.load();void tarot.load();for(const method of Object.values(methods))void method.load();void memory.load();
+  const loadReadings=()=>{void controller.load();void tarot.load();for(const method of Object.values(methods))void method.load();};
+  ctx.effect(()=>rpc.watch(ctx.on.bind(ctx),(available,reset)=>{
+    if(reset||!available){memory.resetConnection();controller.resetPrivate();tarot.resetPrivate();for(const method of Object.values(methods))method.resetPrivate();}
+    if(!available){loadReadings();void memory.load();return;}
+    const signal=rpc.signal;
+    void memory.load().then(()=>{if(!signal.aborted)loadReadings();});
+  }),'divination: connection subscription');
 }

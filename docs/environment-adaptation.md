@@ -1,15 +1,15 @@
-# 问象 0.6 环境适配
+# 问象环境适配
 
-本说明对应 2026-10-07 的源码和安装包。Windows DSH 桌面端与 Linux Web 宿主使用相同的纯 JavaScript 插件包；各台机器使用自身的 Node、DSH 运行库和数据目录。
+当前源码为 0.8.0，适配 DSH 0.2.1-rc.1。Windows DSH 桌面端与 Linux Web 宿主使用相同的纯 JavaScript 插件包；各台机器使用自身的 Node、DSH 运行库和数据目录。
 
-本次两台目标机器的版本、启动脚本和证据见[实际验收记录](environment-adaptation-20261007.md)。
+2026-10-07 的两台目标机器版本、启动脚本和旧版证据保留于[历史验收记录](environment-adaptation-20261007.md)。新版宿主兼容策略与本机验证见[更新兼容性说明](dsh-compatibility.md)，旧版跨平台通过不代表新版已在那些平台复验。
 
 ## 所需环境
 
 | 项目 | 要求 |
 | --- | --- |
-| DSH | `0.2.0-rc.2`，对应插件声明的宿主与客户端 peer 版本 |
-| Node | `22.18+` 的 22.x 或 `24+`；桌面端可使用应用随附的 Node |
+| DSH | 当前适配 `0.2.1-rc.1`，安装范围 `>=0.2.0-rc.2 <0.3.0-0`，后续版本需复验 |
+| Node | `22.19+` 的 22.x 或 `24+`；桌面端可使用应用随附的 Node |
 | 历法 | ICU 中国农历、闰月与 `Asia/Shanghai` 时区可用 |
 | 加密 | Node `scrypt` 与 `AES-256-GCM` 可用 |
 | 浏览器验收 | 本机或目标机已有 Chromium/Chrome 和 Playwright |
@@ -18,10 +18,10 @@
 
 ## Windows 桌面端
 
-在插件管理界面输入安装包的 Windows 绝对路径，如 `D:\Downloads\dsh-meihua-0.6.0-environment-20261007.tgz`，安装后确认已启用。如果使用命令行，优先使用桌面应用现有的 `dsh` 命令：
+在插件管理界面输入安装包的 Windows 绝对路径，如 `D:\Downloads\dsh-meihua-0.8.0.tgz`，安装后确认已启用。如果使用命令行，优先使用桌面应用现有的 `dsh` 命令：
 
 ```powershell
-dsh plugin add "D:\Downloads\dsh-meihua-0.6.0-environment-20261007.tgz" --profile desktop
+dsh plugin --profile desktop add "D:\Downloads\dsh-meihua-0.8.0.tgz"
 ```
 
 需要先做隔离验收时，将安装包解压到独立目录，并用本文提供的环境验证脚本检查该目录，不需要接触日常 DSH profile：
@@ -39,7 +39,7 @@ node scripts/verify-environment.mjs --plugin "D:\Work\wenxiang-adaptation\packag
 在用户应用目录安装固定版本的官方 CLI。下面的命令以独立工作目录为前提；保留原有服务和日常 profile：
 
 ```sh
-npm install --prefix ./runtime --save-exact --omit=dev @deepseek-ai/dsh@0.2.0-rc.2
+npm install --prefix ./runtime --save-exact --omit=dev @deepseek-ai/dsh@0.2.1-rc.1
 node scripts/verify-environment.mjs --plugin ./package --runtime ./runtime --output ./environment.json
 ```
 

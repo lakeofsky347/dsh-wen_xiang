@@ -2,13 +2,13 @@
 
 [返回使用指南](../README.md)
 
-本文面向需要修改、测试或扩展插件的开发者。安装基线为 `dsh-meihua 0.6.0` / DeepSeek Harness `0.2.0-rc.2`；本轮源码中的集中提示词、模型能力策略与手动恢复见 [施工与验收说明](v7-implementation.md)。实际构建、日常安装及真实供应商验证须分别确认，旧版验收记录不能证明当前工作区已经发布。日常操作请先看使用指南。
+本文面向需要修改、测试或扩展插件的开发者。当前源码为 `dsh-meihua 0.8.0`，适配 DeepSeek Harness `0.2.1-rc.1` 并保留 `0.2.0-rc.2` 路径；版本范围、模型能力协商和更新验证见[兼容性说明](dsh-compatibility.md)。集中提示词与手动恢复的历史实现见 [0.7 施工与验收说明](v7-implementation.md)。实际构建、日常安装及真实供应商验证须分别确认，旧版验收记录不能证明当前工作区已经发布。日常操作请先看使用指南。
 
 ## 1. 准备本地环境
 
-插件源码位于本仓库。通常从 `dsh_clone` 和已安装的 DSH 桌面应用读取接口、运行库与开发工具。本轮用户已选择扩展 DSH 模型能力接口，允许在 `dsh_clone` 内实施限定的宿主改动；这不等于可以自动覆盖日常桌面安装。宿主与插件的构建、测试和安装证据须分别记录。
+插件源码位于本仓库。通常从 `dsh_clone` 和已安装的 DSH 桌面应用读取接口、运行库与开发工具。参考仓库可能存在本地改动，应以已发布的运行库和对应发布标签核对接口。0.8 适配通过插件自身完成，不要求修改宿主源码。宿主与插件的构建、测试和安装证据须分别记录。
 
-依赖版本以 [package.json](../package.json) 为准。使用 Node.js 22.18+ 的 22.x 或 24+；隐私扫描还要求该 Node 版本提供 `node:zlib` 的 `zstdDecompressSync`，例如 Node 24。完整集成测试会直接加载 `.local/runtime` 下的正式 DSH JSON storage 和 JSONL 后端，因此仅安装 npm 依赖不足以运行全部测试。
+依赖版本以 [package.json](../package.json) 为准。使用 Node.js 22.19+ 的 22.x 或 24+；隐私扫描还要求该 Node 版本提供 `node:zlib` 的 `zstdDecompressSync`，例如 Node 24。完整集成测试会加载当前选定运行库的正式 DSH JSON storage 和 JSONL 后端，因此仅安装 npm 依赖不足以运行全部测试。`npm run verify:compat` 会记录并传入该运行库；单独运行测试时通过 `.local/runtime-selected.json` 读取默认选择，也可用 `DSH_TEST_RUNTIME` 明确指定。
 
 在已有 DSH 桌面安装和参考仓库依赖的本机环境中，可以复用现有工具：
 
@@ -19,7 +19,7 @@ npm run build
 npm test
 ```
 
-[`prepare:local`](../scripts/prepare-local.mjs) 会读取桌面应用的 `app.asar`，把 DSH 运行库提取到本仓库的 `.local/runtime`，并在本仓库 `node_modules` 建立指向现有工具和运行库的符号链接。它不下载依赖，也不修改参考仓库或桌面安装。
+[`prepare:local`](../scripts/prepare-local.mjs) 会读取桌面应用的 `app.asar`，把 DSH 运行库提取到本仓库 `.local/runtimes/` 下按版本、指纹与平台隔离的目录，并在本仓库 `node_modules` 建立指向现有工具和运行库的符号链接。它不下载依赖，也不修改参考仓库或桌面安装。
 
 脚本会探测当前平台的桌面安装位置，默认从相邻 `dsh_clone` 或本仓库已装开发依赖获取工具，也支持完整官方 runtime：
 
@@ -35,7 +35,7 @@ npm test
 DSH_REFERENCE="$(cd ../dsh_clone && pwd)" npm run prepare:local
 ```
 
-脚本逐项核对宿主 peer 和开发依赖版本，并记录运行库来源指纹。旧提取目录没有指纹时会先回读比对现有文件；来源或版本改变后会提示将本仓库缓存移开，阻止静默混用，不覆盖桌面安装。Windows 目录链接使用 junction。
+脚本逐项核对宿主 peer 和开发依赖版本，并记录运行库来源指纹。新版本使用独立缓存，保留旧版 `.local/runtime` 与已有指纹，不覆盖桌面安装。当前选择写入 `.local/runtime-selected.json`；同一缓存指纹不符时明确报错，防止混用。Windows 目录链接使用 junction。
 
 ## 2. 启动隔离预览
 
@@ -46,7 +46,7 @@ npm run build
 npm run preview
 ```
 
-[`preview`](../scripts/preview.mjs) 使用官方 `dsh` CLI，在默认 `.local/test-home` 中创建并运行 `meihua-v1` profile，将其插件依赖链接到当前仓库。它还写入 `.local/offline.patch.yml`，关闭脚本列出的真实供应商插件，并注册测试专用供应商。
+[`preview`](../scripts/preview.mjs) 使用官方 `dsh` CLI，在默认 `.local/test-home` 中创建并运行 `meihua-v1` profile，将其插件依赖链接到当前仓库。它还在预览 home 内写入 `offline.patch.yml`，关闭脚本列出的真实供应商插件，并注册测试专用供应商。
 
 打开终端输出的本地地址，在插件中选择 **「本地演示 · 模拟供应商」→「模拟解读（不调用真实 API）」**。这条路线适合检查首次解读、追问、流式文字、取消、背景提炼和并发限制。首次使用仍需为这个隔离 profile 设置测试口令。
 
@@ -69,9 +69,10 @@ npm run preview
 
 | 命令或脚本 | 检查内容与产出 |
 | --- | --- |
+| `npm run verify:compat` | 对选定的官方运行库依次执行准备、类型检查、全部插件回归、构建、运行库身份与导出检查，保存报告与日志 |
 | `npm run typecheck` | 执行 `tsc --noEmit`，检查 TypeScript 类型 |
 | `npm run build` | 校验并内嵌塔罗图像，生成 Host、客户端、五个规则入口、声明文件及素材许可记录，产出到 `lib/` |
-| `npm test` | 执行 `tests/*.test.ts` 与 `tests/*.test.tsx`；包含本地规则、服务、记忆和客户端流程检查 |
+| `npm test` | 执行 `tests/*.test.ts`、`tests/*.test.tsx` 与 `tests/*.test.mjs`；包含本地规则、服务、记忆和客户端流程检查 |
 | `npm pack --pack-destination artifacts` | 先执行 `prepack` 中的类型检查与构建，再生成 npm 安装包；不会自动执行 `npm test` |
 | `node scripts/verify-package.mjs …` | 比对安装包与已解压目录，检查包结构、素材哈希、许可、导出与规则样例 |
 | `node scripts/verify-frontend.mjs` | 在真实隔离 Web 运行时检查五模块本地操作、主题、宽窄布局并截图；不点击 AI 解读或追问 |
@@ -82,15 +83,15 @@ npm run preview
 
 当前包清单允许 `lib/`、`cordis.patch.yml`、`README.md` 和 `LICENSE`，npm 还会包含 `package.json`。`docs/`、测试、原始素材下载目录与模拟供应商不在当前发行清单中。本开发指南中的相对链接用于源码仓库浏览。
 
-以下示例适用于当前 `0.6.0` 版本。解压前请确认目标是本次专用的空目录，防止旧文件影响回读：
+以下示例适用于当前 `0.8.0` 版本。解压前请确认目标是本次专用的空目录，防止旧文件影响回读：
 
 ```sh
 npm test
 npm pack --pack-destination artifacts
 mkdir -p .local/package-readback
-tar -xzf artifacts/dsh-meihua-0.6.0.tgz -C .local/package-readback
+tar -xzf artifacts/dsh-meihua-0.8.0.tgz -C .local/package-readback
 node scripts/verify-package.mjs \
-  artifacts/dsh-meihua-0.6.0.tgz \
+  artifacts/dsh-meihua-0.8.0.tgz \
   .local/package-readback/package \
   artifacts/verification-package/package-integrity.json
 ```

@@ -3,7 +3,7 @@ import { LlmAdapter } from '@deepseek-ai/dsh-llm';
 export const inject=['llm'];
 class OfflineAdapter extends LlmAdapter {
   seen=new Set();
-  async resolveModel(provider,model){return {provider,id:model,name:'模拟解读（不调用真实 API）',context:{contextWindow:262144},maxOutputTokens:65536,defaultMaxTokens:3000,outputTokenAccounting:'includes-reasoning',reasoning:{efforts:[{id:'off',name:'关闭'},{id:'max',name:'最大'}],maxEffort:'max',defaultEffort:'off'}};}
+  async resolveModel(provider,model){return {provider,id:model,name:'模拟解读（不调用真实 API）',context:{contextWindow:262144},maxOutputTokens:65536,defaultMaxTokens:65536,outputTokenAccounting:'includes-reasoning',reasoning:{efforts:[{id:'off',name:'关闭'},{id:'max',name:'最大'}],maxEffort:'max',defaultEffort:'off'}};}
   providerInfo(id){return {id,name:'本地演示 · 模拟供应商'};}
   async listModels(provider){return [{provider,id:'offline-demo',name:'模拟解读（不调用真实 API）'}];}
   async *stream(options){

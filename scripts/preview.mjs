@@ -25,9 +25,11 @@ if(currentLink?.isSymbolicLink()){
 }else if(currentLink&&realpathSync(link)!==realpathSync(pluginRoot))throw new Error('The preview contains an installed plugin directory instead of the selected package link. Select a new isolated preview home.');
 if(!existsSync(link))linkDirectory(pluginRoot,link);
 const manifestPath=resolve(profile,'package.json'),manifest=JSON.parse(readFileSync(manifestPath,'utf8'));
-manifest.dependencies={'dsh-meihua':`link:${pluginRoot}`};manifest.dsh.profile.bundles=['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app','dsh-meihua'];
+manifest.dependencies={...manifest.dependencies,'dsh-meihua':`link:${pluginRoot}`};
+manifest.dsh??={};manifest.dsh.profile??={};
+manifest.dsh.profile.bundles=[...new Set([...(manifest.dsh.profile.bundles??['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app']),'dsh-meihua'])];
 writeFileSync(manifestPath,JSON.stringify(manifest,null,2)+'\n');
-const patch=resolve(root,'.local/offline.patch.yml');
+const patch=resolve(home,'offline.patch.yml');assertPreviewPath(home,patch);
 writeFileSync(patch,`- id: llm-pi-ai\n  disabled: true\n- id: llm-deepseek\n  disabled: true\n- id: llm-deepseek-account\n  disabled: true\n- id: agent-default-model\n  config:\n    provider: meihua-offline\n    model: offline-demo\n- insert:\n  - id: meihua-offline\n    name: ${JSON.stringify(resolve(root,'tests/fixtures/preview-provider.mjs'))}\n`);
 console.log('Isolated DSH preview. Select 本地演示 · 模拟供应商 for an offline interpretation.');
 const invocation=cliInvocation(cli,['--profile','meihua-v1','--patch',patch,'--no-open','--host','127.0.0.1','--port',process.env.DSH_PREVIEW_PORT??'19402']);

@@ -1,6 +1,6 @@
 import type { ModuleId } from "../shared/modules.ts";
 import type { DurableMessage, HostContext, LogSession, PersistenceHandle, LlmChunk } from './platform.ts';
-import { generationPolicy, preparedGenerationPolicy } from './generation-policy.ts';
+import { prepareGeneration } from './generation-policy.ts';
 import type { GenerationInfo, ModelRoute, PluginConfig } from '../shared/protocol.ts';
 import type { MemoryService } from './memory-service.ts';
 import type { MemorySnapshot } from '../shared/memory.ts';
@@ -45,9 +45,7 @@ export async function generatePrivate(ctx:HostContext,config:PluginConfig,reques
   try {
     controller.signal.throwIfAborted();
     memory?.assertUnlocked();
-    const policy=await generationPolicy(ctx,config,request.route,request.messages,request.system,controller.signal);
-    const prepared=await ctx.llm.prepareCall?.(policy.config,controller.signal);
-    const dispatchPolicy=prepared?preparedGenerationPolicy(policy,prepared,config,request.messages,request.system):policy;
+    const {policy:dispatchPolicy,prepared}=await prepareGeneration(ctx,config,request.route,request.messages,request.system,controller.signal);
     const call=dispatchPolicy.config;
     Object.assign(generation,dispatchPolicy.display);notify();
     controller.signal.throwIfAborted();stage='log';

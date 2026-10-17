@@ -1,3 +1,4 @@
+import { runtimePath } from './runtime-path.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp,readFile,rm } from 'node:fs/promises';
@@ -15,7 +16,7 @@ const {Session}=await import(sessionPackage) as {Session:new(id:string,seed:unde
 const config:PluginConfig={timeZone:'Asia/Shanghai',animationMs:4800,interpretationTimeoutMs:1500,maxOutputTokens:3000,pollIntervalMs:100};
 const input={ruleId:'three-numbers',question:'测试问题',values:{a:2,b:3,c:2},environment:{capturedAt:'2026-10-02T04:00:00Z',timeZone:'Asia/Shanghai',details:{observation:'微风'}}};
 const route={provider:'second-provider',model:'second-model'};
-function setup(generate:(options:GenerateOptions)=>AsyncIterable<LlmChunk>,persistence?:HostContext['sessionPersistence']) {
+function setup(generate:(options:GenerateOptions)=>AsyncIterable<LlmChunk>,persistence?:HostContext['sessionPersistence'],settings:PluginConfig=config) {
   const calls:GenerateOptions[]=[],events:LogEvent[]=[],disposers:(()=>void|Promise<void>)[]=[];
   const routes=new Map<string,{fetch(request:Request):Promise<Response>}>();
   let flushed=false;
@@ -27,13 +28,14 @@ function setup(generate:(options:GenerateOptions)=>AsyncIterable<LlmChunk>,persi
     reflect:{provide:()=>async()=>{}},
     effect:factory=>{const dispose=factory();if(dispose)disposers.push(dispose);}
   };
-  return {ctx,service:new MeihuaService(ctx,config),events,calls,routes,disposers,setFlushed:()=>{flushed=true;}};
+  return {ctx,service:new MeihuaService(ctx,settings),events,calls,routes,disposers,setFlushed:()=>{flushed=true;}};
 }
 async function* complete():AsyncGenerator<LlmChunk>{
   yield {type:'text-delta',index:0,text:'首份'};yield {type:'text-delta',index:0,text:'完整解读'};yield {type:'finish',reason:{kind:'stop'}};
 }
-async function settled(service:MeihuaService):Promise<Reading>{
-  for(let i=0;i<200;i++){const reading=service.snapshot()!;if(reading.status!=='streaming')return reading;await new Promise(r=>setTimeout(r,10));}
+async function settled(service:MeihuaService,timeoutMs=2000):Promise<Reading>{
+  const deadline=Date.now()+timeoutMs;
+  while(Date.now()<deadline){const reading=service.snapshot()!;if(reading.status!=='streaming')return reading;await new Promise(r=>setTimeout(r,10));}
   throw new Error('generation did not settle');
 }
 
@@ -100,13 +102,14 @@ test('使用发布版 DSH JSONL 后端读回终态元信息，排除私人问题
   const cordisPackage:string='@deepseek-ai/cordis';
   type Fiber={await():Promise<void>;dispose():Promise<void>};
   const {Context}=await import(cordisPackage) as {Context:new()=>{plugin(plugin:unknown,config:object):Fiber;get(name:string):unknown}};
-  const module=await import(pathToFileURL(resolve('.local/runtime/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js')).href) as {default:unknown};
-  const root=await mkdtemp(join(tmpdir(),'meihua-log-')),ctx=new Context(),fiber=ctx.plugin(module.default,{root,compression:'none'});
+  const module=await import(pathToFileURL(runtimePath('node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js')).href) as {default?:unknown;apply?:unknown};
+  assert.ok(typeof module.default==='function'||typeof module.apply==='function','released JSONL package must expose a Cordis plugin');
+  const root=await mkdtemp(join(tmpdir(),'meihua-log-')),ctx=new Context(),fiber=ctx.plugin(module.default??module,{root,compression:'none'});
   await fiber.await();
   const persistence=ctx.get('sessionPersistence') as HostContext['sessionPersistence'] & {open(id:string,mode:'read'):Promise<PersistenceHandle & {read():Promise<{events:LogEvent[]}>}>;locate(meta:LogSession['header']):{path:string}};
-  const s=setup(complete,persistence);s.setFlushed();
+  const s=setup(complete,persistence,{...config,interpretationTimeoutMs:5000});s.setFlushed();
   try{
-    const reading=await s.service.cast(input);await s.service.interpret(reading.id,route);const final=await settled(s.service);
+    const reading=await s.service.cast(input);await s.service.interpret(reading.id,route);const final=await settled(s.service,5000);
     assert.equal(final.status,'complete');assert.equal(final.error,undefined);
     const handle=await persistence.open(final.logSessionId!,'read'),{events:rows}=await handle.read();await handle.close();
     assert.ok(rows.some(e=>e.type==='private/result'));assert.equal(rows.at(-1)!.type,'turn/end');

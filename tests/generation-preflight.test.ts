@@ -1,3 +1,4 @@
+import { runtimePath } from './runtime-path.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -16,7 +17,7 @@ import type {MethodReading} from '../src/shared/methods.ts';
 import type {ModuleId} from '../src/shared/modules.ts';
 import type {GenerateOptions,HostContext,LogSession,ModelInfo} from '../src/host/platform.ts';
 
-const {JsonStorageBackend}=await import(pathToFileURL(resolve('.local/runtime/node_modules/@deepseek-ai/dsh-storage-json/lib/index.js')).href) as {JsonStorageBackend:new(root:string)=>{kv:unknown;close():Promise<void>}};
+const {JsonStorageBackend}=await import(pathToFileURL(runtimePath('node_modules/@deepseek-ai/dsh-storage-json/lib/index.js')).href) as {JsonStorageBackend:new(root:string)=>{kv:unknown;close():Promise<void>}};
 const sessionPackage:string='@deepseek-ai/dsh-session';
 const {Session}=await import(sessionPackage) as {Session:new(id:string,seed:undefined,header:object)=>LogSession};
 type Current=Reading|TarotReading|MethodReading;

@@ -4,6 +4,8 @@ import type { GenerationInfo, ModelRoute, PluginConfig } from '../shared/protoco
 export interface GenerationPolicy {
   config:CallConfig;
   info?:ModelInfo;
+  /** Only registration-bound configure callbacks guarantee ascending reasoning levels. */
+  reasoningOrder?:'ascending';
   display:Pick<GenerationInfo,'reasoningLabel'|'reasoningStatus'|'maxTokens'|'budgetSource'|'outputTokenAccounting'|'contextCharacters'|'contextLimitCharacters'>;
 }
 
@@ -14,10 +16,10 @@ export function contextSize(messages:readonly DurableMessage[],system:string):{c
 }
 
 /** Legacy adapters expose named levels but not their order; unfamiliar ids remain unknown. */
-function maximumEffort(info:ModelInfo|undefined):{effort?:string;label?:string;status:GenerationInfo['reasoningStatus']} {
+function maximumEffort(info:ModelInfo|undefined,order?:GenerationPolicy['reasoningOrder']):{effort?:string;label?:string;status:GenerationInfo['reasoningStatus']} {
   const reasoning=info?.reasoning;
   if(!reasoning||reasoning.efforts.every(value=>value.id==='off'))return {status:'unavailable',label:'该路由未开放思考档位'};
-  let maximum=reasoning.maxEffort;
+  let maximum=order==='ascending'?reasoning.efforts.at(-1)?.id:reasoning.maxEffort;
   const standard=['off','minimal','low','medium','high','xhigh','max','ultra'];
   if(!maximum&&reasoning.efforts.every(value=>standard.includes(value.id))){
     maximum=standard.filter(id=>reasoning.efforts.some(value=>value.id===id)).at(-1);
@@ -33,7 +35,7 @@ export async function generationPolicy(ctx:HostContext,config:PluginConfig,route
   return policyFromInfo(info,config,route,messages,system);
 }
 
-function policyFromInfo(info:ModelInfo|undefined,config:PluginConfig,route:ModelRoute,messages:readonly DurableMessage[],system:string):GenerationPolicy {
+function policyFromInfo(info:ModelInfo|undefined,config:PluginConfig,route:ModelRoute,messages:readonly DurableMessage[],system:string,reasoningOrder?:GenerationPolicy['reasoningOrder']):GenerationPolicy {
   const size=contextSize(messages,system),fallbackLimit=config.maxContextCharacters??60000;
   const window=info?.context?.contextWindow,safety=config.contextSafetyTokens??4096;
   let room:number|undefined,limit=fallbackLimit;
@@ -48,10 +50,25 @@ function policyFromInfo(info:ModelInfo|undefined,config:PluginConfig,route:Model
   const requested=typeof mode==='number'?mode:info?.maxOutputTokens??info?.defaultMaxTokens;
   const budgetSource:GenerationInfo['budgetSource']=typeof mode==='number'?'fallback':info?.maxOutputTokens!==undefined?'model-maximum':'host-default';
   const maxTokens=requested===undefined?undefined:Math.min(requested,info?.maxOutputTokens??Number.MAX_SAFE_INTEGER,room??Number.MAX_SAFE_INTEGER);
-  const effort=info?maximumEffort(info):{status:'unknown' as const,label:'宿主未提供思考能力信息'};
-  return {info,config:{...route,...(maxTokens===undefined?{}:{maxTokens}),...(effort.effort?{reasoningEffort:effort.effort}:{})},
+  const effort=info?maximumEffort(info,reasoningOrder):{status:'unknown' as const,label:'宿主未提供思考能力信息'};
+  return {info,...(reasoningOrder?{reasoningOrder}:{}),config:{...route,...(maxTokens===undefined?{}:{maxTokens}),...(effort.effort?{reasoningEffort:effort.effort}:{})},
     display:{reasoningStatus:effort.status,...(effort.label?{reasoningLabel:effort.label}:{}),...(maxTokens===undefined?{}:{maxTokens}),budgetSource,...(info?.outputTokenAccounting?{outputTokenAccounting:info.outputTokenAccounting}:{}),
       contextCharacters:size.characters,contextLimitCharacters:limit}};
+}
+
+/** Select controls from the captured adapter when supported; keep legacy hosts conservative. */
+export async function prepareGeneration(ctx:HostContext,config:PluginConfig,route:ModelRoute,messages:readonly DurableMessage[],system:string,signal:AbortSignal):Promise<{policy:GenerationPolicy;prepared?:PreparedCall}> {
+  const initial=await generationPolicy(ctx,config,route,messages,system,signal);
+  let captured:GenerationPolicy|undefined;
+  const prepared=await ctx.llm.prepareCall?.(initial.config,signal,(_controls,info)=>{
+    if(captured)throw Object.assign(new Error('宿主重复准备同一模型请求，本次未发送'),{code:'MODEL_CHANGED'});
+    if(info.provider!==route.provider||info.id!==route.model)throw Object.assign(new Error('模型路由已变化，本次未发送'),{code:'MODEL_CHANGED'});
+    captured=policyFromInfo(info,config,route,messages,system,'ascending');
+    const {provider:_provider,model:_model,...controls}=captured.config;
+    return controls;
+  });
+  const policy=captured??initial;
+  return {policy:prepared?preparedGenerationPolicy(policy,prepared,config,messages,system):policy,...(prepared?{prepared}:{})};
 }
 
 /** Validate the immutable dispatch snapshot before writing request logs or starting its stream. */
@@ -66,7 +83,7 @@ export function preparedGenerationPolicy(policy:GenerationPolicy,prepared:Prepar
   // Older hosts omit these newer fields. Their absence alone is not evidence of a capability change.
   if(previous?.maxOutputTokens!==undefined&&prepared.maxOutputTokens!==undefined&&previous.maxOutputTokens!==prepared.maxOutputTokens)changed();
   if(previous?.outputTokenAccounting!==undefined&&prepared.outputTokenAccounting!==undefined&&previous.outputTokenAccounting!==prepared.outputTokenAccounting)changed();
-  if(previous?.reasoning&&prepared.reasoning&&reasoningSignature(previous.reasoning)!==reasoningSignature(prepared.reasoning))changed();
+  if(previous?.reasoning&&prepared.reasoning&&reasoningSignature(previous.reasoning,policy.reasoningOrder)!==reasoningSignature(prepared.reasoning,policy.reasoningOrder))changed();
   const info:ModelInfo={
     ...(previous??{provider:call.provider,id:call.model,name:call.model}),
     ...(prepared.context?{context:prepared.context}:{}),
@@ -75,7 +92,7 @@ export function preparedGenerationPolicy(policy:GenerationPolicy,prepared:Prepar
     ...(prepared.outputTokenAccounting?{outputTokenAccounting:prepared.outputTokenAccounting}:{}),
   };
   const route={provider:call.provider,model:call.model};
-  const actual=(()=>{try{return policyFromInfo(info,config,route,messages,system);}catch{return changed();}})();
+  const actual=(()=>{try{return policyFromInfo(info,config,route,messages,system,policy.reasoningOrder);}catch{return changed();}})();
   const window=info.context?.contextWindow;
   const room=window===undefined?undefined:Math.floor(window-contextSize(messages,system).estimatedTokens-(config.contextSafetyTokens??4096));
   if(call.maxTokens!==undefined&&(!Number.isSafeInteger(call.maxTokens)||call.maxTokens<=0))changed();
@@ -92,6 +109,7 @@ export function preparedGenerationPolicy(policy:GenerationPolicy,prepared:Prepar
     ...(call.maxTokens===undefined?{}:{maxTokens:call.maxTokens})}};
 }
 
-function reasoningSignature(reasoning:NonNullable<ModelInfo['reasoning']>):string {
-  return JSON.stringify({efforts:reasoning.efforts.map(effort=>effort.id).sort(),maxEffort:reasoning.maxEffort,defaultEffort:reasoning.defaultEffort});
+function reasoningSignature(reasoning:NonNullable<ModelInfo['reasoning']>,order?:GenerationPolicy['reasoningOrder']):string {
+  const ids=reasoning.efforts.map(effort=>effort.id);
+  return JSON.stringify({efforts:order==='ascending'?ids:ids.sort(),maxEffort:reasoning.maxEffort,defaultEffort:reasoning.defaultEffort});
 }

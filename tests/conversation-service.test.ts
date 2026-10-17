@@ -1,3 +1,4 @@
+import { runtimePath } from './runtime-path.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -27,7 +28,7 @@ async function* pending(options:GenerateOptions):AsyncGenerator<LlmChunk>{
   yield {type:'text-delta',index:0,text:'保留部分回答'};
   await new Promise<void>(resolve=>{if(options.signal.aborted)resolve();else options.signal.addEventListener('abort',()=>resolve(),{once:true});});options.signal.throwIfAborted();
 }
-function setup(module:Module,generate:(options:GenerateOptions,index:number)=>AsyncIterable<LlmChunk>=complete,persistence?:HostContext['sessionPersistence']){
+function setup(module:Module,generate:(options:GenerateOptions,index:number)=>AsyncIterable<LlmChunk>=complete,persistence?:HostContext['sessionPersistence'],settings:PluginConfig=config){
   const calls:GenerateOptions[]=[],events:LogEvent[]=[],durable=new Set<string>(),gate=new GenerationGate();
   const ctx:HostContext={
     llm:{listProviders:()=>[{id:route.provider,name:'Configured'}],listModels:async()=>[{id:route.model,name:'Chosen'}],stream:options=>{
@@ -40,7 +41,7 @@ function setup(module:Module,generate:(options:GenerateOptions,index:number)=>As
     }},
     connection:{fetch:{register:()=>async()=>{}}},reflect:{provide:()=>async()=>{}},effect:factory=>factory(),
   };
-  const service:Service=module==='meihua'?new MeihuaService(ctx,config,gate):new TarotService(ctx,config,gate);
+  const service:Service=module==='meihua'?new MeihuaService(ctx,settings,gate):new TarotService(ctx,settings,gate);
   return {ctx,service,gate,calls,events};
 }
 async function ready(service:Service):Promise<Current>{
@@ -49,11 +50,12 @@ async function ready(service:Service):Promise<Current>{
   for(let index=0;index<reading.spread.cardCount;index++)service.select(reading.id,index);
   return service.reveal(reading.id,undefined,true);
 }
-async function settled(service:Service):Promise<Current>{
-  for(let index=0;index<200;index++){const reading=service.snapshot()!;if(!readingIsBusy(reading))return reading;await new Promise(resolve=>setTimeout(resolve,3));}
+async function settled(service:Service,timeoutMs=600):Promise<Current>{
+  const deadline=Date.now()+timeoutMs;
+  while(Date.now()<deadline){const reading=service.snapshot()!;if(!readingIsBusy(reading))return reading;await new Promise(resolve=>setTimeout(resolve,3));}
   throw new Error('conversation did not settle');
 }
-async function first(service:Service):Promise<Current>{const reading=await ready(service);await service.interpret(reading.id,route);return settled(service);}
+async function first(service:Service,timeoutMs?:number):Promise<Current>{const reading=await ready(service);await service.interpret(reading.id,route);return settled(service,timeoutMs);}
 async function partialArrived(service:Service):Promise<void>{
   for(let index=0;index<200&&!service.snapshot()!.conversation?.at(-1)?.text;index++)await new Promise(resolve=>setTimeout(resolve,2));
   assert.ok(service.snapshot()!.conversation?.at(-1)?.text);
@@ -205,15 +207,17 @@ test('首次解读失败或取消但已有文字时可追问，完整保留原�
 test('官方 DSH JSONL 后端读回两模块当前轮终态元信息，无私人问答或固定结果全文',async()=>{
   const cordisPackage:string='@deepseek-ai/cordis';type Fiber={await():Promise<void>;dispose():Promise<void>};
   const {Context}=await import(cordisPackage) as {Context:new()=>{plugin(plugin:unknown,config:object):Fiber;get(name:string):unknown}};
-  const module=await import(pathToFileURL(resolve('.local/runtime/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js')).href) as {default:unknown};
-  const root=await mkdtemp(join(tmpdir(),'conversation-log-')),ctx=new Context(),fiber=ctx.plugin(module.default,{root,compression:'none'});await fiber.await();
+  const module=await import(pathToFileURL(runtimePath('node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js')).href) as {default?:unknown;apply?:unknown};
+  assert.ok(typeof module.default==='function'||typeof module.apply==='function','released JSONL package must expose a Cordis plugin');
+  const root=await mkdtemp(join(tmpdir(),'conversation-log-')),ctx=new Context(),fiber=ctx.plugin(module.default??module,{root,compression:'none'});await fiber.await();
   const persistence=ctx.get('sessionPersistence') as HostContext['sessionPersistence']&{open(id:string,mode:'read'):Promise<PersistenceHandle&{read():Promise<{events:LogEvent[]}>}>;locate(meta:LogSession['header']):{path:string}};
   try{
     for(const module of ['meihua','tarot'] as const){
-      const s=setup(module,complete,persistence);
+      // Released storage performs real filesystem work; retain fast limits for mock-only cases.
+      const s=setup(module,complete,persistence,{...config,interpretationTimeoutMs:5000});
       try{
-        const original=await first(s.service);await s.service.followup(original.id,'第一轮持久化问题',0);await settled(s.service);await s.service.followup(original.id,'第二轮持久化问题',1);
-        const final=await settled(s.service),turn=final.conversation![1]!;assert.equal(turn.status,'complete');assert.equal(turn.error,undefined);
+        const original=await first(s.service,5000);await s.service.followup(original.id,'第一轮持久化问题',0);await settled(s.service,5000);await s.service.followup(original.id,'第二轮持久化问题',1);
+        const final=await settled(s.service,5000),turn=final.conversation![1]!;assert.equal(turn.status,'complete');assert.equal(turn.error,undefined);
         const handle=await persistence.open(turn.logSessionId!,'read'),{events}=await handle.read();await handle.close();
         assert.deepEqual(events.map(event=>event.type),['turn/start','step/start','request/header','private/request','private/result','step/end','turn/end']);
         assert.equal((events.find(event=>event.type==='private/result')!.data as {status:string}).status,'complete');

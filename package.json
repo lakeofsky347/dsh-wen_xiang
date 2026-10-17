@@ -1,10 +1,11 @@
 {
   "name": "dsh-meihua",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "问象 · 五种占卜与口令加密共享背景：梅花、塔罗、小六壬、雷诺曼、六爻纳甲",
   "type": "module",
   "engines": {
-    "node": "^22.18.0 || >=24.0.0"
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.0-rc.2 <0.3.0-0"
   },
   "license": "MIT",
   "main": "lib/index.js",
@@ -56,34 +57,36 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-session": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-session-persistence": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-storage": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-connection": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-layout": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-sidebar": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-locale": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-theme": "0.2.0-rc.2"
+    "@deepseek-ai/dsh-llm": ">=0.2.0-rc.2 <0.3.0-0",
+    "@deepseek-ai/dsh-session": ">=0.2.0-rc.2 <0.3.0-0",
+    "@deepseek-ai/dsh-session-persistence": ">=0.2.0-rc.2 <0.3.0-0",
+    "@deepseek-ai/dsh-storage": ">=0.2.0-rc.2 <0.3.0-0",
+    "@deepseek-ai/dsh-client-connection": ">=0.2.0-rc.2 <0.3.0-0",
+    "@deepseek-ai/dsh-client-ui-layout": ">=0.2.0-rc.2 <0.3.0-0",
+    "@deepseek-ai/dsh-client-ui-sidebar": ">=0.2.0-rc.2 <0.3.0-0",
+    "@deepseek-ai/dsh-client-locale": ">=0.2.0-rc.2 <0.3.0-0",
+    "@deepseek-ai/dsh-client-ui-theme": ">=0.2.0-rc.2 <0.3.0-0"
   },
   "devDependencies": {
-    "@types/node": "22.20.0",
+    "@types/node": "22.20.1",
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "jsdom": "29.1.1",
     "tsdown": "0.22.2",
-    "tsx": "4.22.4",
+    "tsx": "4.23.13",
+    "semver": "7.8.5",
     "typescript": "6.0.3"
   },
   "scripts": {
     "prepare:local": "node scripts/prepare-local.mjs",
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.mjs",
-    "test": "node --import tsx --test tests/*.test.ts tests/*.test.tsx",
+    "test": "node --import tsx --test tests/*.test.ts tests/*.test.tsx tests/*.test.mjs",
     "preview": "node scripts/preview.mjs",
     "verify:environment": "node scripts/verify-environment.mjs",
+    "verify:compat": "node scripts/verify-compatibility.mjs",
     "prepack": "npm run typecheck && npm run build"
   }
 }

@@ -1,3 +1,4 @@
+import { runtimePath } from './runtime-path.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
@@ -16,7 +17,7 @@ import type {GenerateOptions,HostContext,LlmChunk,LogEvent,LogSession} from '../
 import type {PluginConfig,RpcResult} from '../src/shared/protocol.ts';
 import type {LiuyaoResult} from '../src/liuyao/types.ts';
 import type {LenormandResult} from '../src/lenormand/types.ts';
-const {JsonStorageBackend}=await import(pathToFileURL(resolve('.local/runtime/node_modules/@deepseek-ai/dsh-storage-json/lib/index.js')).href) as {JsonStorageBackend:new(root:string)=>{kv:unknown;close():Promise<void>}};
+const {JsonStorageBackend}=await import(pathToFileURL(runtimePath('node_modules/@deepseek-ai/dsh-storage-json/lib/index.js')).href) as {JsonStorageBackend:new(root:string)=>{kv:unknown;close():Promise<void>}};
 const sessionPackage:string='@deepseek-ai/dsh-session';
 const {Session}=await import(sessionPackage) as {Session:new(id:string,seed:undefined,header:object)=>LogSession};
 const config:PluginConfig={timeZone:'Asia/Shanghai',animationMs:0,interpretationTimeoutMs:4000,maxOutputTokens:3000,pollIntervalMs:100},route={provider:'fixture',model:'fixture'};

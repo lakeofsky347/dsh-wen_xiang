@@ -1,3 +1,4 @@
+import { runtimePath } from './runtime-path.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -20,7 +21,7 @@ import type { MeihuaController } from '../src/client/controller.ts';
 import type { TarotController } from '../src/client/tarot-controller.ts';
 import type { MemoryController } from '../src/client/memory-controller.ts';
 
-const { JsonStorageBackend } = await import(pathToFileURL(resolve('.local/runtime/node_modules/@deepseek-ai/dsh-storage-json/lib/index.js')).href) as {JsonStorageBackend:new(root:string)=>{kv:unknown;close():Promise<void>}};
+const { JsonStorageBackend } = await import(pathToFileURL(runtimePath('node_modules/@deepseek-ai/dsh-storage-json/lib/index.js')).href) as {JsonStorageBackend:new(root:string)=>{kv:unknown;close():Promise<void>}};
 const sessionPackage:string='@deepseek-ai/dsh-session', jsdomPackage:string='jsdom';
 const { Session } = await import(sessionPackage) as {Session:new(id:string,seed:undefined,header:object)=>LogSession};
 const { JSDOM } = await import(jsdomPackage) as {JSDOM:new(html:string,options:object)=>{window:Window & typeof globalThis}};

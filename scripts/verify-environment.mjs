@@ -5,7 +5,8 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve, dirname } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { realpathSync } from 'node:fs';
+import { realpathSync, readFileSync } from 'node:fs';
+import { resolveSemver, versionSatisfies, assertRuntimeCompatibility } from './environment.mjs';
 
 const args = process.argv.slice(2);
 const options = {};
@@ -27,8 +28,7 @@ const report = { checkedAt: new Date().toISOString(), platform: process.platform
   evidence: 'Target-machine release imports and synthetic deterministic checks; no model call or desktop UI claim', checks };
 const load = entry => import(pathToFileURL(resolve(plugin, manifest.exports[entry].default)).href);
 await check('Node runtime', () => {
-  const [major, minor] = process.versions.node.split('.').map(Number);
-  assert.ok(major >= 24 || major === 22 && minor >= 18, 'Use Node 22.18+ or 24+');
+  assert.ok(versionSatisfies(process.versions.node, manifest.engines.node, resolveSemver({ root })), `Use Node ${manifest.engines.node}`);
   return process.version;
 });
 await check('Chinese calendar and leap month', async () => {
@@ -87,13 +87,13 @@ await check('Private-storage cryptography', () => {
 if (options.runtime) await check('Installed DSH peer versions', () => {
   const require = createRequire(resolve(options.runtime, 'package.json'));
   const requirePlugin = createRequire(resolve(plugin, 'package.json'));
-  const packages = Object.fromEntries(Object.keys(manifest.peerDependencies).map(name => [name, require(`${name}/package.json`).version]));
-  for (const [name, expected] of Object.entries(manifest.peerDependencies)) {
-    if (name !== '@deepseek-ai/cordis') assert.equal(packages[name], expected, `${name} must match the supported DSH release`);
-    else assert.match(packages[name], /^4\./);
+  const runtime = JSON.parse(readFileSync(resolve(options.runtime, 'package.json'), 'utf8'));
+  const packages = Object.fromEntries(Object.keys(manifest.peerDependencies).map(name => [name, require(`${name}/package.json`)]));
+  assertRuntimeCompatibility(manifest, runtime.version, packages, resolveSemver({ root, runtime: options.runtime }));
+  for (const name of Object.keys(manifest.peerDependencies)) {
     assert.equal(realpathSync(requirePlugin.resolve(`${name}/package.json`)), realpathSync(require.resolve(`${name}/package.json`)), `${name} must resolve from the same runtime used by the extracted plugin`);
   }
-  return packages;
+  return { runtimeVersion: runtime.version, engine: manifest.engines?.dsh, packages: Object.fromEntries(Object.entries(packages).map(([name, value]) => [name, value.version])) };
 });
 if (options.runtime) await check('Actual host dependency imports', async () => {
   const host = await import(pathToFileURL(resolve(plugin, manifest.main)).href);

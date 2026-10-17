@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSy
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { resolveReference, resolveDshResources, resolveRuntimeSource, resolveDshCli, cliInvocation, resolvePreviewHome, assertPreviewPath } from '../scripts/environment.mjs';
 
 const fake = (platform, env, files, root = platform === 'win32' ? 'C:\\work\\plugin' : '/work/plugin') => ({ platform, env, root, home: platform === 'win32' ? 'C:\\Users\\tester' : '/home/tester', exists: filename => files.includes(filename) });
@@ -33,6 +34,12 @@ test('CLI 显式覆盖、PATH 与发行目录的选择不会依赖开发者路�
   assert.equal(resolveDshCli(fake('linux', { PATH: '/custom/bin:/usr/bin' }, ['/custom/bin/dsh'])), '/custom/bin/dsh');
   assert.equal(resolveDshCli(fake('win32', { DSH_RUNTIME: 'D:\\dsh-runtime' }, ['D:\\dsh-runtime\\cli\\bin\\dsh.cmd'])), 'D:\\dsh-runtime\\cli\\bin\\dsh.cmd');
   assert.throws(() => resolveDshCli(fake('linux', { DSH_CLI: '/missing', PATH: '/usr/bin' }, ['/usr/bin/dsh'])), /DSH_CLI/);
+});
+test('显式 runtime 的 CLI 优先于另一份已安装桌面版，DSH_CLI 仍优先', () => {
+  const files = ['/release/bin/dsh', '/installed/app.asar', '/installed/runtime/cli/bin/dsh', '/override/dsh'];
+  const env = { DSH_RUNTIME: '/release', DSH_RESOURCES: '/installed' };
+  assert.equal(resolveDshCli(fake('linux', env, files)), '/release/bin/dsh');
+  assert.equal(resolveDshCli(fake('linux', { ...env, DSH_CLI: '/override/dsh' }, files)), '/override/dsh');
 });
 test('Windows .cmd 启动保留空格与 &，禁用延迟展开并拒绝变量展开字符', () => {
   const invocation = cliInvocation('C:\\Harness & tools\\dsh.cmd', ['--patch', 'C:\\test home\\offline.patch.yml'], { platform: 'win32', env: { ComSpec: 'C:\\Windows\\System32\\cmd.exe' } });
@@ -71,28 +78,41 @@ test('预览目录与 profile 中的 symlink 都不能逃到日常目录', () =>
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('prepare 可链接完整 runtime、重复核对指纹，版本变化明确阻止旧缓存复用', () => {
+test('prepare 可链接完整 runtime、重复核对指纹，升级另建缓存并保留旧记录', () => {
   const fixture = mkdtempSync(path.join(tmpdir(), 'wenxiang-prepare-'));
   const root = path.join(fixture, 'plugin'), source = path.join(fixture, 'released-runtime');
   try {
     mkdirSync(path.join(root, 'scripts'), { recursive: true });
     mkdirSync(path.join(root, 'node_modules/fixture-tool'), { recursive: true });
     mkdirSync(path.join(source, 'node_modules/fixture-host'), { recursive: true });
-    const manifest = { name: 'fixture-plugin', type: 'module', devDependencies: { 'fixture-tool': '1.0.0' }, peerDependencies: { 'fixture-host': '0.2.0-rc.2' } };
+    const manifest = { name: 'fixture-plugin', type: 'module', engines: { dsh: '>=0.2.0-rc.2 <0.3.0-0' }, devDependencies: { 'fixture-tool': '1.0.0' }, peerDependencies: { 'fixture-host': '>=0.2.0-rc.2 <0.3.0-0' } };
     writeFileSync(path.join(root, 'package.json'), JSON.stringify(manifest));
     writeFileSync(path.join(root, 'node_modules/fixture-tool/package.json'), '{"name":"fixture-tool","version":"1.0.0"}');
+    symlinkSync(path.dirname(createRequire(import.meta.url).resolve('semver/package.json')), path.join(root, 'node_modules/semver'), process.platform === 'win32' ? 'junction' : 'dir');
     writeFileSync(path.join(source, 'node_modules/fixture-host/package.json'), '{"name":"fixture-host","version":"0.2.0-rc.2"}');
     writeFileSync(path.join(source, 'package.json'), '{"name":"fixture-runtime","version":"0.2.0-rc.2"}');
     for (const name of ['prepare-local.mjs', 'environment.mjs']) copyFileSync(new URL(`../scripts/${name}`, import.meta.url), path.join(root, 'scripts', name));
-    const execute = () => spawnSync(process.execPath, [path.join(root, 'scripts/prepare-local.mjs')], { cwd: root, encoding: 'utf8', env: { ...process.env, DSH_REFERENCE: '', DSH_RESOURCES: '', DSH_RUNTIME: source } });
+    const execute = (extra = {}) => spawnSync(process.execPath, [path.join(root, 'scripts/prepare-local.mjs')], { cwd: root, encoding: 'utf8', env: { ...process.env, DSH_REFERENCE: '', DSH_RESOURCES: '', DSH_RUNTIME: source, DSH_RUNTIME_CACHE: '', ...extra } });
     const initial = execute(); assert.equal(initial.status, 0, initial.stderr);
-    assert.equal(realpathSync(path.join(root, '.local/runtime')), realpathSync(source));
-    const marker = readFileSync(path.join(root, '.local/runtime-source.json'), 'utf8');
+    const selected = path.join(root, '.local/runtime-selected.json');
+    const original = JSON.parse(readFileSync(selected, 'utf8'));
+    assert.equal(realpathSync(original.runtime), realpathSync(source));
+    const marker = readFileSync(`${original.runtime}.source.json`, 'utf8');
     assert.equal(execute().status, 0);
-    assert.equal(readFileSync(path.join(root, '.local/runtime-source.json'), 'utf8'), marker);
-    writeFileSync(path.join(source, 'package.json'), '{"name":"fixture-runtime","version":"0.3.0"}');
-    const changed = execute(); assert.notEqual(changed.status, 0); assert.match(changed.stderr, /cached .local\/runtime differs/);
-    assert.equal(readFileSync(path.join(root, '.local/runtime-source.json'), 'utf8'), marker);
+    assert.equal(readFileSync(`${original.runtime}.source.json`, 'utf8'), marker);
+    const fixed = { DSH_RUNTIME_CACHE: '.local/fixed-runtime' };
+    assert.equal(execute(fixed).status, 0);
+    const fixedMarker = readFileSync(path.join(root, '.local/fixed-runtime.source.json'), 'utf8');
+    writeFileSync(path.join(source, 'package.json'), '{"name":"fixture-runtime","version":"0.2.1-rc.1"}');
+    const staleFixed = execute(fixed); assert.notEqual(staleFixed.status, 0); assert.match(staleFixed.stderr, /cached .local\/runtime differs/);
+    assert.equal(readFileSync(path.join(root, '.local/fixed-runtime.source.json'), 'utf8'), fixedMarker);
+    const changed = execute(); assert.equal(changed.status, 0, changed.stderr);
+    const updated = JSON.parse(readFileSync(selected, 'utf8'));
+    assert.notEqual(updated.runtime, original.runtime);
+    assert.equal(readFileSync(`${original.runtime}.source.json`, 'utf8'), marker);
+    writeFileSync(path.join(source, 'package.json'), '{"name":"fixture-runtime","version":"0.3.0-alpha.1"}');
+    const unsupported = execute(); assert.notEqual(unsupported.status, 0); assert.match(unsupported.stderr, /outside engines.dsh/);
+    assert.equal(JSON.parse(readFileSync(selected, 'utf8')).runtime, updated.runtime);
   } finally { rmSync(fixture, { recursive: true, force: true }); }
 });
 
@@ -108,7 +128,7 @@ test('preview 使用选择的 CLI 与包、保留 meihua-v1，并只写入隔离
     const cli = path.join(fixture, 'mock-dsh.mjs'), record = path.join(fixture, 'launcher-record.json');
     writeFileSync(cli, `import fs from 'node:fs';import path from 'node:path';
 const home=process.env.DSH_HOME,args=process.argv.slice(2),profile=path.join(home,'profiles/meihua-v1');
-if(args.includes('--help')){fs.mkdirSync(profile,{recursive:true});fs.writeFileSync(path.join(profile,'cordis.yml'),'# fixture');fs.writeFileSync(path.join(profile,'package.json'),JSON.stringify({dependencies:{},dsh:{profile:{}}}));}
+if(args.includes('--help')){fs.mkdirSync(profile,{recursive:true});fs.writeFileSync(path.join(profile,'cordis.yml'),'# fixture');fs.writeFileSync(path.join(profile,'package.json'),JSON.stringify({dependencies:{'fixture-runtime':'1.0.0'},dsh:{profile:{bundles:['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app','fixture-future-bundle']}}}));}
 else fs.writeFileSync(${JSON.stringify(record)},JSON.stringify({home,args}));
 `);
     const launched = spawnSync(process.execPath, [path.join(root, 'scripts/preview.mjs')], {
@@ -123,7 +143,9 @@ else fs.writeFileSync(${JSON.stringify(record)},JSON.stringify({home,args}));
     assert.equal(realpathSync(installed), realpathSync(path.join(root, 'package')));
     const profile = JSON.parse(readFileSync(path.join(saved.home, 'profiles/meihua-v1/package.json'), 'utf8'));
     assert.equal(profile.dependencies['dsh-meihua'], `link:${path.join(root, 'package')}`);
-    assert.match(readFileSync(path.join(root, '.local/offline.patch.yml'), 'utf8'), /provider: meihua-offline/);
+    assert.equal(profile.dependencies['fixture-runtime'], '1.0.0');
+    assert.deepEqual(profile.dsh.profile.bundles, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'fixture-future-bundle', 'dsh-meihua']);
+    assert.match(readFileSync(path.join(saved.home, 'offline.patch.yml'), 'utf8'), /provider: meihua-offline/);
     assert.deepEqual(readdirSync(daily), []);
   } finally { rmSync(fixture, { recursive: true, force: true }); }
 });

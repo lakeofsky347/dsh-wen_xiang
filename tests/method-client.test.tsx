@@ -1,3 +1,4 @@
+import { runtimePath } from './runtime-path.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {act} from 'react';
@@ -25,7 +26,7 @@ import type {LiuyaoResult} from '../src/liuyao/types.ts';
 const jsdomPackage:string='jsdom',sessionPackage:string='@deepseek-ai/dsh-session';
 const {JSDOM}=await import(jsdomPackage) as {JSDOM:new(html:string,options:object)=>{window:Window & typeof globalThis}};
 const {Session}=await import(sessionPackage) as {Session:new(id:string,seed:undefined,header:object)=>LogSession};
-const {JsonStorageBackend}=await import(pathToFileURL(resolve('.local/runtime/node_modules/@deepseek-ai/dsh-storage-json/lib/index.js')).href) as {JsonStorageBackend:new(root:string)=>{kv:unknown;close():Promise<void>}};
+const {JsonStorageBackend}=await import(pathToFileURL(runtimePath('node_modules/@deepseek-ai/dsh-storage-json/lib/index.js')).href) as {JsonStorageBackend:new(root:string)=>{kv:unknown;close():Promise<void>}};
 const dom=new JSDOM('<!doctype html><html><body><div id="method-test-root"></div></body></html>',{url:'http://localhost'});
 for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,navigator:dom.window.navigator,IS_REACT_ACT_ENVIRONMENT:true}))Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});
 const container=()=>document.getElementById('method-test-root')!;

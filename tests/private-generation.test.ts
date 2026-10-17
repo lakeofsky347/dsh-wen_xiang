@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { generatePrivate, withBackground } from '../src/host/private-generation.ts';
 import type { PrivateGeneration } from '../src/host/private-generation.ts';
 import type { MemoryService } from '../src/host/memory-service.ts';
-import type { GenerateOptions, HostContext, LlmChunk, LogEvent, LogSession, ModelInfo, PreparedCall } from '../src/host/platform.ts';
+import type { GenerateOptions, HostContext, HostLlm, LlmChunk, LogEvent, LogSession, ModelInfo, PreparedCall } from '../src/host/platform.ts';
 import type { PluginConfig } from '../src/shared/protocol.ts';
 
 const sessionPackage:string='@deepseek-ai/dsh-session';
@@ -193,4 +193,67 @@ test('旧prepared接口和未知模型能力不冒充已知思考支持',async()
   s.ctx.llm.prepareCall=async call=>({config:call,stream:options=>s.ctx.llm.stream(options)});
   const result=await generatePrivate(s.ctx,{...config,maxOutputTokens:'model-maximum'},request,new AbortController());
   assert.equal(result.status,'complete');assert.equal(result.generation.reasoningStatus,'unknown');assert.equal(result.generation.maxTokens,undefined);
+});
+
+test('rc1在绑定模型回调按宿主顺序选择最高不透明档位，预算保留真实默认含义',async()=>{
+  const s=setup(async function*(){yield {type:'text-delta',index:0,text:output};yield {type:'finish',reason:{kind:'stop'}};});
+  const current:ModelInfo={provider:'fixture',id:'local',name:'Fixture',context:{contextWindow:32768},defaultMaxTokens:4096,
+    reasoning:{efforts:[{id:'adaptive-small',name:'较低'},{id:'adaptive-full',name:'最高'}],defaultEffort:'adaptive-small'}};
+  // A settings update between the standalone query and capture must use the captured generation.
+  s.ctx.llm.resolveModelInfo=async()=>({...current,defaultMaxTokens:1024,reasoning:{efforts:[{id:'old',name:'旧档位'}]}});
+  let captures=0,dispatched=false;
+  s.ctx.llm.prepareCall=async(proposed,signal,configure)=>{
+    signal?.throwIfAborted();assert.ok(configure);captures++;
+    const selected=configure(Object.freeze({maxTokens:proposed.maxTokens}),Object.freeze(current));
+    const frozen=Object.freeze({...selected,provider:proposed.provider,model:proposed.model});
+    return {config:frozen,context:current.context,stream(options){assert.equal(dispatched,false);dispatched=true;assert.equal(options.reasoningEffort,frozen.reasoningEffort);assert.equal(options.maxTokens,frozen.maxTokens);return s.ctx.llm.stream(options);}};
+  };
+  const result=await generatePrivate(s.ctx,{...config,maxOutputTokens:'model-maximum'},request,new AbortController());
+  assert.equal(result.status,'complete');assert.equal(captures,1);assert.equal(s.calls.length,1);
+  assert.equal(s.calls[0]!.reasoningEffort,'adaptive-full');assert.equal(s.calls[0]!.maxTokens,4096);
+  assert.equal(result.generation.reasoningStatus,'maximum');assert.equal(result.generation.reasoningLabel,'最高');assert.equal(result.generation.budgetSource,'host-default');
+  const logged=s.events.find(event=>event.type==='request/header')!.data as {header:{config:object}};
+  assert.deepEqual(logged.header.config,{provider:'fixture',model:'local',maxTokens:4096,reasoningEffort:'adaptive-full'});assertPrivateLog(s.events);
+});
+
+test('rc1捕获后的不安全上下文或改变的派发配置在日志与模型前拒绝',async()=>{
+  for(const mode of ['context','route','controls'] as const){
+    const s=setup(async function*(){yield {type:'text-delta',index:0,text:output};yield {type:'finish',reason:{kind:'stop'}};});
+    const info:ModelInfo={provider:'fixture',id:'local',name:'Fixture',context:{contextWindow:32768},defaultMaxTokens:4096,reasoning:{efforts:[{id:'alpha',name:'低'},{id:'omega',name:'高'}]}};
+    s.ctx.llm.resolveModelInfo=async()=>info;
+    s.ctx.llm.prepareCall=async(proposed,_signal,configure)=>{
+      assert.ok(configure);
+      const captured={...info,...(mode==='context'?{context:{contextWindow:128}}:{}),...(mode==='route'?{id:'other'}:{})};
+      const controls=configure({},captured);
+      return {config:{...proposed,...controls,...(mode==='controls'?{reasoningEffort:'alpha'}:{})},context:captured.context,stream:options=>s.ctx.llm.stream(options)};
+    };
+    const result=await generatePrivate(s.ctx,{...config,maxOutputTokens:'model-maximum'},request,new AbortController());
+    assert.equal(result.status,'failed',mode);assert.equal(result.error?.code,mode==='context'?'CONTEXT_LIMIT':'MODEL_CHANGED',mode);
+    assert.equal(s.calls.length,0);assert.equal(s.events.length,0);
+  }
+});
+
+test('已发布宿主的真实LlmRuntime冻结配置只派发一次，普通日志与请求完全一致',async()=>{
+  const cordisPackage:string='@deepseek-ai/cordis',llmPackage:string='@deepseek-ai/dsh-llm';
+  type Fiber={await():Promise<void>;dispose():Promise<void>};
+  const {Context}=await import(cordisPackage) as {Context:new()=>{plugin(plugin:unknown):Fiber;get(name:string):unknown}};
+  const {LlmRuntime,LlmAdapter}=await import(llmPackage) as {LlmRuntime:unknown;LlmAdapter:new()=>object};
+  const host=new Context(),s=setup(async function*(){throw new Error('unexpected fallback dispatch');});
+  const actualCalls:GenerateOptions[]=[],fiber=host.plugin(LlmRuntime);
+  try{
+    await fiber.await();
+    const runtime=host.get('llm') as HostLlm&{registerAdapter(providers:string[],adapter:object):()=>void};
+    runtime.registerAdapter(['fixture'],new class extends LlmAdapter {
+      async resolveModel(provider:string,model:string):Promise<ModelInfo>{return {provider,id:model,name:'Released runtime fixture',context:{contextWindow:32768},defaultMaxTokens:4096,reasoning:{efforts:[{id:'low',name:'低'},{id:'high',name:'高'}],defaultEffort:'low'}};}
+      async *stream(options:GenerateOptions):AsyncIterable<LlmChunk>{actualCalls.push(options);yield {type:'text-delta',index:0,text:output};yield {type:'finish',reason:{kind:'stop'}};}
+    }());
+    assert.ok(runtime.prepareCall);
+    const prepare=runtime.prepareCall.bind(runtime);let captured:PreparedCall|undefined;
+    s.ctx.llm={...s.ctx.llm,resolveModelInfo:runtime.resolveModelInfo!.bind(runtime),prepareCall:async(...args)=>{captured=await prepare(...args);assert.ok(Object.isFrozen(captured));assert.ok(Object.isFrozen(captured.config));return captured;}};
+    const result=await generatePrivate(s.ctx,{...config,maxOutputTokens:'model-maximum'},request,new AbortController());
+    assert.equal(result.status,'complete');assert.equal(actualCalls.length,1);assert.equal(actualCalls[0]!.reasoningEffort,'high');assert.equal(actualCalls[0]!.maxTokens,4096);assert.equal(actualCalls[0]!.sessionId,undefined);
+    const logged=s.events.find(event=>event.type==='request/header')!.data as {header:{config:object}};
+    assert.deepEqual(logged.header.config,captured!.config);assert.equal(result.generation.budgetSource,'host-default');assertPrivateLog(s.events);
+    assert.throws(()=>captured!.stream(actualCalls[0]!),{code:'INVALID_PREPARED_CALL'});
+  }finally{await fiber.dispose();}
 });

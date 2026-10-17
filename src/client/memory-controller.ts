@@ -55,11 +55,12 @@ export class MemoryController {
   close=():void=>{this.update({open:false});};
   private async mutate(endpoint:string,payload:unknown,notice:string):Promise<boolean> {
     if(this.state.acting)return false;
+    const signal=this.abort.signal;
     ++this.revision;
     this.update({acting:true,error:'',notice:''});
-    try {await this.call(endpoint,payload);await this.load();this.update({notice});return true;}
-    catch(error){this.update({error:message(error)});return false;}
-    finally {this.update({acting:false});}
+    try {await this.call(endpoint,payload);if(signal.aborted)return false;await this.load();if(signal.aborted)return false;this.update({notice});return true;}
+    catch(error){if(!signal.aborted)this.update({error:message(error)});return false;}
+    finally {if(!signal.aborted)this.update({acting:false});}
   }
   initialize=(passphrase:string):Promise<boolean>=>this.mutate('initialize',{passphrase},'共享背景已启用，口令只用于本地解锁。');
   unlock=(passphrase:string):Promise<boolean>=>this.mutate('unlock',{passphrase},'已解锁，可在各占卜方式中使用。');
@@ -69,6 +70,11 @@ export class MemoryController {
   clear=():Promise<boolean>=>this.mutate('clear',{epoch:this.state.status?.epoch},'已清空背景、版本、关联记录与当前会话。');
   changePassphrase=(oldPassphrase:string,newPassphrase:string):Promise<boolean>=>this.mutate('change-passphrase',{oldPassphrase,newPassphrase,epoch:this.state.status?.epoch},'口令已更改，请妥善保管。');
   notifyCheckpoint=():void=>{void this.load();};
+  /** A replacement connection must re-establish vault state before sharing an epoch. */
+  resetConnection():void {
+    ++this.revision;this.abort.abort();this.abort=new AbortController();clearTimeout(this.pollTimer);
+    this.update({status:null,document:null,versions:[],loading:true,acting:false,error:'',notice:'',privacyEpoch:this.state.privacyEpoch+1});
+  }
   dispose():void {this.disposed=true;this.abort.abort();clearTimeout(this.pollTimer);this.listeners.clear();}
 }
 function message(error:unknown):string {return error instanceof Error?error.message:'共享背景操作未完成';}
