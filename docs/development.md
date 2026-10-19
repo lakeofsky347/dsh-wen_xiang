@@ -2,7 +2,7 @@
 
 [返回使用指南](../README.md)
 
-本文面向需要修改、测试或扩展插件的开发者。当前源码为 `dsh-meihua 0.8.0`，适配 DeepSeek Harness `0.2.1-rc.1` 并保留 `0.2.0-rc.2` 路径；版本范围、模型能力协商和更新验证见[兼容性说明](dsh-compatibility.md)。集中提示词与手动恢复的历史实现见 [0.7 施工与验收说明](v7-implementation.md)。实际构建、日常安装及真实供应商验证须分别确认，旧版验收记录不能证明当前工作区已经发布。日常操作请先看使用指南。
+本文面向需要修改、测试或扩展插件的开发者。当前源码为 `dsh-meihua 0.8.1`，适配 DeepSeek Harness `0.2.1-rc.1` 并保留 `0.2.0-rc.2` 路径；版本范围、模型能力协商和更新验证见[兼容性说明](dsh-compatibility.md)。集中提示词与手动恢复的历史实现见 [0.7 施工与验收说明](v7-implementation.md)。实际构建、日常安装及真实供应商验证须分别确认，旧版验收记录不能证明当前工作区已经发布。日常操作请先看使用指南。
 
 ## 1. 准备本地环境
 
@@ -83,15 +83,15 @@ npm run preview
 
 当前包清单允许 `lib/`、`cordis.patch.yml`、`README.md` 和 `LICENSE`，npm 还会包含 `package.json`。`docs/`、测试、原始素材下载目录与模拟供应商不在当前发行清单中。本开发指南中的相对链接用于源码仓库浏览。
 
-以下示例适用于当前 `0.8.0` 版本。解压前请确认目标是本次专用的空目录，防止旧文件影响回读：
+以下示例适用于当前 `0.8.1` 版本。解压前请确认目标是本次专用的空目录，防止旧文件影响回读：
 
 ```sh
 npm test
 npm pack --pack-destination artifacts
 mkdir -p .local/package-readback
-tar -xzf artifacts/dsh-meihua-0.8.0.tgz -C .local/package-readback
+tar -xzf artifacts/dsh-meihua-0.8.1.tgz -C .local/package-readback
 node scripts/verify-package.mjs \
-  artifacts/dsh-meihua-0.8.0.tgz \
+  artifacts/dsh-meihua-0.8.1.tgz \
   .local/package-readback/package \
   artifacts/verification-package/package-integrity.json
 ```

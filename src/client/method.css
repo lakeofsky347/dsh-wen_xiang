@@ -93,6 +93,14 @@
 .wx-palace-meaning {padding:24px 0 4px;}
 .wx-palace-meaning h2 {font-size:25px;margin:5px 0 10px;}
 .wx-palace-meaning>p:last-child {font-size:14px;line-height:1.95;}
+.wx-reading-summary {font-size:14px;line-height:1.95;margin:4px 0 10px;color:var(--method-ink);}
+.wx-reading-base {font-size:12px;line-height:1.85;color:var(--method-muted);margin-bottom:14px;}
+.wx-three-talents {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0 14px;}
+.wx-three-talents article {min-width:0;padding:12px 13px;border-left:2px solid var(--method-accent);background:var(--method-wash);}
+.wx-three-talents small {display:block;font-size:10px;letter-spacing:.08em;color:var(--method-muted);}
+.wx-three-talents p {margin-top:6px;font-size:12px;line-height:1.9;}
+.wx-reading-relations,.wx-reading-advice {font-size:12px;line-height:1.9;padding-top:10px;border-top:1px solid var(--method-line);margin-top:10px;}
+.wx-reading-relations b,.wx-reading-advice b {color:var(--method-accent);margin-right:6px;}
 /* Lenormand: cream cards, botanical backs and a clear middle-card anchor. */
 .wx-small-cards {display:grid;gap:12px;margin-top:21px;align-items:start;}
 .wx-small-cards-3 {grid-template-columns:repeat(3,minmax(0,1fr));}
@@ -227,6 +235,10 @@
   .wx-small-cards-5 p {font-size:12px;}
   .wx-six-palaces article {padding:18px 11px 14px;}
   .wx-small-deck {gap:7px;}
+}
+@container method-result (max-width:560px) {
+  .wx-three-talents {grid-template-columns:minmax(0,1fr);gap:8px;}
+  .wx-three-talents article {padding:10px 12px;}
 }
 @container method-result (max-width:440px) {
   .wx-six-palaces {gap:8px;}

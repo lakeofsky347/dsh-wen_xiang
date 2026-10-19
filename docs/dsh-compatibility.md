@@ -1,10 +1,10 @@
 # DSH 更新兼容性
 
-问象 0.8.0 以 DeepSeek Harness **0.2.1-rc.1** 为当前适配目标，保留 **0.2.0-rc.2** 的接口路径。核对日期为 2026-10-17；官方发布标签为 [`dsh-v0.2.1-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.1)，对应提交 `1600d8a1e140dcde43a1a0941940a0480712c011`。
+问象 0.8.1 以 DeepSeek Harness **0.2.1-rc.1** 为当前适配目标，保留 **0.2.0-rc.2** 的接口路径。核对日期为 2026-10-17；官方发布标签为 [`dsh-v0.2.1-rc.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.1)，对应提交 `1600d8a1e140dcde43a1a0941940a0480712c011`。
 
 ## 安装范围与实际验证
 
-`package.json` 的 `engines.dsh` 以及 DSH peer 统一声明 `>=0.2.0-rc.2 <0.3.0-0`。新版插件管理器会优先读取 `engines.dsh`；旧版仍可依据 peer 判断。新版 CLI 的 profile 参数放在 `plugin` 与子命令之间，例如 `dsh plugin --profile desktop add /absolute/path/dsh-meihua-0.8.0.tgz`。版本检查与宿主一致，使用 semver 的 `includePrerelease: true`。Cordis 保持独立的 `^4.0.4` 范围。
+`package.json` 的 `engines.dsh` 以及 DSH peer 统一声明 `>=0.2.0-rc.2 <0.3.0-0`。新版插件管理器会优先读取 `engines.dsh`；旧版仍可依据 peer 判断。新版 CLI 的 profile 参数放在 `plugin` 与子命令之间，例如 `dsh plugin --profile desktop add /absolute/path/dsh-meihua-0.8.1.tgz`。版本检查与宿主一致，使用 semver 的 `includePrerelease: true`。Cordis 保持独立的 `^4.0.4` 范围。
 
 这个范围让后续 0.2.x 补丁和候选版本有继续使用的空间，不表示尚未发布的接口已经验证。0.3 及后续版本需要审计后再扩大声明。Node 基线同步为 `^22.19.0 || >=24.0.0`。
 

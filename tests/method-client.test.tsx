@@ -87,6 +87,7 @@ test('三模块实际本地结果可查看；未解锁禁用解读，展开过�
       if(moduleId==='xiaoliu'){
         const result=reading.result as XiaoliuResult;assert.deepEqual(Array.from(container().querySelectorAll('.wx-six-palaces h3')).map(node=>node.textContent),['速喜','大安','小吉']);
         assert.ok(container().textContent?.includes('农历 3月5日 · 辰时'));for(const line of result.steps)assert.ok(container().textContent?.includes(line));assert.ok(container().textContent?.includes(result.meaning));
+        assert.ok(container().textContent?.includes('三才解读'));assert.ok(container().textContent?.includes(result.reading.summary));assert.ok(container().textContent?.includes(result.reading.advice));assert.equal(container().querySelectorAll('.wx-three-talents article').length,3);
       }else if(moduleId==='lenormand'){
         const result=reading.result as LenormandResult;assert.equal(container().querySelectorAll('.wx-small-cards article').length,5);assert.equal(container().querySelectorAll('.wx-small-cards img').length,5);
         assert.equal(result.adjacentPairs.length,4);assert.equal(result.mirrors.length,2);assert.ok(container().textContent?.includes(`中牌主题：${result.center.card.name}`));
