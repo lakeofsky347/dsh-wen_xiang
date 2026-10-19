@@ -54,6 +54,9 @@ test('塔罗十牌、雷诺曼组合与镜像要求完整覆盖且保持各自�
 test('小六壬覆盖三宫，六爻覆盖多动爻而不补造用神', () => {
   assert.match(methodSystem('xiaoliu'), /月宫、日宫、时宫全部覆盖/);
   assert.match(methodSystem('xiaoliu'), /闰月仍取同月数，起点包含在计数内/);
+  assert.match(methodSystem('xiaoliu'), /死六神/);
+  assert.match(methodSystem('xiaoliu'), /大安青龙木/);
+  assert.match(methodSystem('xiaoliu'), /天→地→人/);
   const liuyao = methodSystem('liuyao');
   assert.match(liuyao, /所有动爻都要逐一交代/);
   assert.match(liuyao, /无动爻时明确说明，不虚构变化/);

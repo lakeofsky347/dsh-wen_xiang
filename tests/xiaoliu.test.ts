@@ -6,12 +6,12 @@ import type { CastEnvironment } from '../src/core/types.ts';
 const at=(wall:string,timeZone='Asia/Shanghai'):CastEnvironment=>({capturedAt:wallTimeToInstant(wall,timeZone),timeZone,details:{}});
 const cast=(wall:string)=>calculateXiaoliu({question:'核对起课',environment:at(wall)});
 
-test('玉匣记原书例：三月初五辰时，速喜起日落大安，时落小吉',()=>{
+test('三月初五辰时：速喜起日落大安，时落小吉',()=>{
   // 2024-04-13 = 三月初五: HKO 2024cal04.pdf, independently read/rendered.
   const r=cast('2024-04-13T08:00');
   assert.deepEqual([r.lunar.month,r.lunar.day,r.lunar.hourBranch],[3,5,'辰']);
   assert.deepEqual([r.monthPalace.name,r.dayPalace.name,r.hourPalace.name],['速喜','大安','小吉']);
-  assert.equal(r.name,'小吉');assert.equal(r.element,'木');assert.match(r.meaning,/协商/);
+  assert.equal(r.name,'小吉');assert.equal(r.element,'水');assert.match(r.meaning,/协商/);
 });
 test('正月初一子时含起点，十二时辰完整环绕两次',()=>{
   // HKO 2024cal02.pdf: 2024-02-10 = 正月初一.
@@ -44,9 +44,36 @@ test('同一瞬间按所选时区读取农历日和时辰，冻结环境与结�
 });
 test('六位内容齐全、释义有来源边界，非法时间与问题被拒绝',()=>{
   assert.deepEqual(XIAOLIU_PALACES.map(x=>x.name),['大安','留连','速喜','赤口','小吉','空亡']);
-  assert.deepEqual(XIAOLIU_PALACES.map(x=>x.element),['木','水','火','金','木','土']);
+  assert.deepEqual(XIAOLIU_PALACES.map(x=>x.element),['木','土','火','金','水','土']);
+  assert.deepEqual(XIAOLIU_PALACES.map(x=>x.spirit),['青龙','腾蛇','朱雀','白虎','玄武','勾陈']);
   assert.ok(XIAOLIU_PALACES.every(x=>x.meaning&&x.keywords.length===3));
   assert.throws(()=>calculateXiaoliu({question:' ',environment:at('2024-04-13T08:00')}));
   assert.throws(()=>calculateXiaoliu({question:'q',environment:{capturedAt:'bad',timeZone:'Asia/Shanghai',details:{}}}));
   assert.throws(()=>calculateXiaoliu({question:'q',environment:at('2101-01-01T00:00')}));
+});
+test('死六神固定排宫，三才解读按天→地→人生克推进',()=>{
+  const r=cast('2024-04-13T08:00');
+  assert.deepEqual([r.monthPalace.name,r.dayPalace.name,r.hourPalace.name],['速喜','大安','小吉']);
+  assert.deepEqual([r.monthPalace.spirit,r.dayPalace.spirit,r.hourPalace.spirit],['朱雀','青龙','玄武']);
+  assert.deepEqual([r.monthPalace.element,r.dayPalace.element,r.hourPalace.element],['火','木','水']);
+  assert.equal(r.reading.category,'综合');
+  assert.match(r.reading.heaven,/速喜/);assert.match(r.reading.heaven,/天盘/);
+  assert.match(r.reading.earth,/大安/);assert.match(r.reading.earth,/地盘/);
+  assert.match(r.reading.human,/小吉/);assert.match(r.reading.human,/人盘/);
+  assert.match(r.reading.relations,/地盘木生天盘火/);
+  assert.match(r.reading.relations,/人盘水生地盘木/);
+  assert.ok(r.reading.summary.length>20);
+  assert.ok(r.reading.advice.length>20);
+  const love=calculateXiaoliu({question:'我和他还能复合吗',environment:at('2024-04-13T08:00')});
+  const work=calculateXiaoliu({question:'这个项目要不要接',environment:at('2024-04-13T08:00')});
+  const lost=calculateXiaoliu({question:'钥匙丢在哪了',environment:at('2024-04-13T08:00')});
+  const health=calculateXiaoliu({question:'最近身体不太舒服',environment:at('2024-04-13T08:00')});
+  assert.equal(love.reading.category,'感情');
+  assert.equal(work.reading.category,'事业');
+  assert.equal(lost.reading.category,'寻物');
+  assert.equal(health.reading.category,'健康');
+  assert.notEqual(love.reading.summary,work.reading.summary);
+  assert.notEqual(love.reading.advice,work.reading.advice);
+  assert.match(lost.reading.advice,/方位/);
+  assert.match(health.reading.advice,/医生|检查/);
 });

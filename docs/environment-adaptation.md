@@ -1,6 +1,6 @@
 # 问象环境适配
 
-当前源码为 0.8.0，适配 DSH 0.2.1-rc.1。Windows DSH 桌面端与 Linux Web 宿主使用相同的纯 JavaScript 插件包；各台机器使用自身的 Node、DSH 运行库和数据目录。
+当前源码为 0.8.1，适配 DSH 0.2.1-rc.1。Windows DSH 桌面端与 Linux Web 宿主使用相同的纯 JavaScript 插件包；各台机器使用自身的 Node、DSH 运行库和数据目录。
 
 2026-10-07 的两台目标机器版本、启动脚本和旧版证据保留于[历史验收记录](environment-adaptation-20261007.md)。新版宿主兼容策略与本机验证见[更新兼容性说明](dsh-compatibility.md)，旧版跨平台通过不代表新版已在那些平台复验。
 
@@ -18,10 +18,10 @@
 
 ## Windows 桌面端
 
-在插件管理界面输入安装包的 Windows 绝对路径，如 `D:\Downloads\dsh-meihua-0.8.0.tgz`，安装后确认已启用。如果使用命令行，优先使用桌面应用现有的 `dsh` 命令：
+在插件管理界面输入安装包的 Windows 绝对路径，如 `D:\Downloads\dsh-meihua-0.8.1.tgz`，安装后确认已启用。如果使用命令行，优先使用桌面应用现有的 `dsh` 命令：
 
 ```powershell
-dsh plugin --profile desktop add "D:\Downloads\dsh-meihua-0.8.0.tgz"
+dsh plugin --profile desktop add "D:\Downloads\dsh-meihua-0.8.1.tgz"
 ```
 
 需要先做隔离验收时，将安装包解压到独立目录，并用本文提供的环境验证脚本检查该目录，不需要接触日常 DSH profile：
